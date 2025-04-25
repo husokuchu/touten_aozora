@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>読点クイズゲーム</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+      background-color: #f5f5f5;
+    }
+    .question {
+      background: white;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .char {
+      display: inline-block;
+      cursor: pointer;
+      padding: 0 2px;
+    }
+    .comma-inserted::after {
+      content: '、';
+      color: red;
+      font-weight: bold;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+    }
+    .result {
+      margin-top: 1rem;
+      padding: 1rem;
+      background-color: #e0ffe0;
+      border-radius: 8px;
+    }
+    .highlight {
+      background-color: yellow;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>読点挿入クイズ</h1>
+  <form id="quizForm">
+    <div id="questions"></div>
+    <button type="submit">送信</button>
+  </form>
+
+  <script>
+    const sentences = [
+      "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。",
+      "雨にも負けず、風にも負けず、雪にも夏の暑さにも負けぬ、丈夫なからだをもち。",
+      "彼は静かに部屋に入り、机の上の本を手に取った。",
+      "私は朝早く起きて、散歩に出かけた。",
+      "鳥は空を飛び、魚は水の中を泳ぐ。"
+    ];
+
+    const selected = sentences.sort(() => 0.5 - Math.random()).slice(0, 3);
+    const originalSentences = [];
+    const userCommasAll = [];
+    const quizContainer = document.getElementById("questions");
+    
+
+    selected.forEach((sentence, index) => {
+      originalSentences.push(sentence);
+      const userCommas = [];
+      userCommasAll.push(userCommas);
+
+      const chars = [];
+      for (let j = 0; j < sentence.length; j++) {
+        const char = sentence[j];
+        if (char === '、') continue;
+        chars.push(`<span class="char" data-index="${j + 1}">${char}</span>`);
+      }
+      const spanSentence = chars.join("");
+
+      quizContainer.innerHTML += `
+        <div class="question" data-idx="${index}" id="question${index}">
+          <p><strong>第${index + 1}問:</strong></p>
+          <p id="sentence${index}">${spanSentence}</p>
+        </div>
+      `;
+    });
+
+    // 読点クリック挿入処理
+    document.querySelectorAll(".char").forEach(span => {
+      span.addEventListener("click", () => {
+        const index = parseInt(span.getAttribute("data-index"));
+        const parent = span.closest(".question");
+        const qIndex = parseInt(parent.getAttribute("data-idx"));
+        const userCommas = userCommasAll[qIndex];
+
+        const already = userCommas.includes(index);
+        if (already) {
+          userCommas.splice(userCommas.indexOf(index), 1);
+          span.classList.remove("comma-inserted");
+        } else {
+          userCommas.push(index);
+          span.classList.add("comma-inserted");
+        }
+      });
+    });
+
+    document.getElementById("quizForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+
+      // 送信ボタンを無効化
+      const submitButton = document.querySelector("button[type='submit']");
+      submitButton.disabled = true;
+
+      // 回答が重複しないようにする
+      if (document.querySelectorAll(".result").length > 0) {
+        return;  // すでに結果が表示されていれば何もしない
+      }
+
+      for (let i = 0; i < 3; i++) {
+        const correct = originalSentences[i];
+        const correctText = correct.replace(/。/g, "");
+
+        const correctCommas = Array.from(correct.matchAll(/、/g)).map(m => m.index);
+        const userCommas = userCommasAll[i].slice().sort((a, b) => a - b);
+
+        // デバッグ用出力
+        console.log(`第${i + 1}問`);
+        console.log("correct:", correct);
+        console.log("correctText:", correctText);
+        console.log("userCommasAll[i]:", userCommasAll[i]);
+        console.log("correctCommas:", correctCommas);
+        console.log("userCommas:", userCommas);
+
+        let matchCount = 0;
+        correctCommas.forEach(pos => {
+          if (userCommas.includes(pos)) matchCount++;
+        });
+
+        let rate;
+        if (correctCommas.length === 0 && userCommas.length === 0) {
+          rate = 100;
+        } else {
+          const precision = userCommas.length > 0 ? matchCount / userCommas.length : 0;
+          const recall = correctCommas.length > 0 ? matchCount / correctCommas.length : 0;
+          const f1 = (precision + recall) > 0 ? 2 * (precision * recall) / (precision + recall) : 0;
+          rate = Math.round(f1 * 100);
+        }
+
+        function highlightCommas(text, commaPositions) {
+          let result = "";
+          for (let j = 0; j < text.length; j++) {
+            if (commaPositions.includes(j)) {
+              result += '<span class="highlight">、</span>';
+            } else {
+              result += text[j];
+            }
+          }
+          return result;
+        }
+
+        const highlightedCorrect = highlightCommas(correctText, correctCommas);
+
+        const clean = correct.replace(/、/g, "").replace(/。/g, "");
+        const userText = clean.split("").map((c, idx) => {
+          const originalIdx = [...correct].reduce((acc, char, i) => {
+            if (char !== '、') acc.push(i);
+            return acc;
+          }, [])[idx];
+          return userCommas.includes(originalIdx) ? c + '<span class="highlight">、</span>' : c;
+        }).join("");
+
+        const resultHTML = `
+          <div class="result">
+            <p><strong>第${i + 1}問 正解率 :</strong> ${rate}%</p>
+            <p><strong>正解文:</strong> ${highlightedCorrect}</p>
+          </div>
+        `;
+
+        const questionElem = document.getElementById(`question${i}`);
+        questionElem.insertAdjacentHTML("beforeend", resultHTML);
+      }
+    });
+  </script>
+</body>
+</html>
